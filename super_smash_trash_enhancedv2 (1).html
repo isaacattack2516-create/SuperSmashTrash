@@ -325,7 +325,7 @@
         moves.nspec.spreadAngle = 0.16;
         moves.nspec.stun = true; moves.nspec.stunTime = 0.25;
         moves.nspec.cooldown = 0.9; moves.nspec.projectile = true;
-        moves.nspec.d = 3; moves.nspec.kb = 180;
+        moves.nspec.d = 2; moves.nspec.kb = 180;
 
         moves.sspec.boomerang = true; moves.sspec.gale = true; // wind-pull, short range
         moves.sspec.galeRange = 280; moves.sspec.pull = 5.5;
@@ -916,11 +916,11 @@
 
         if (this.char.id === 'bront') {
           let dmg = 12 + ratio * 30;
-          let kb = 700 + ratio * 800;
+          let kb = (700 + ratio * 800) / 2;
           let w = 90 + ratio * 50;
           g.tempHitboxes.push({
             x: this.x + (this.face > 0 ? 20 : -20 - w), y: this.y - this.h * 0.8, w: w, h: 60,
-            damage: dmg, kb: kb, angle: this.face > 0 ? -0.2 : Math.PI + 0.2,
+            damage: dmg, kb: kb, angle: -0.2,
             owner: this, life: 0.25, color: '#ff4400'
           });
           sparks(g, this.x + this.face * 50, this.y - this.h / 2, '#ff4400', this.face, 30);
@@ -1133,7 +1133,7 @@
               const off = (si - (n - 1) / 2) * spreadA;
               const spd = 1050;
               g.projectiles.push(new Projectile(this, this.x + this.face * 28, this.y - 50, this.face * Math.cos(off) * spd, Math.sin(off) * spd, this.char.accent, {
-                stun: true, needle: true, stunTime: 0.25, damage: 3, kb: 180, r: 7, life: 1.0
+                stun: true, needle: true, stunTime: 0.25, damage: 2, kb: 180, r: 7, life: 1.0
               }));
             }
             dust(g, this.x + this.face * 20, this.y - 50, this.char.accent, 6);
@@ -1501,13 +1501,15 @@
             if (op && !op.dead && op.invincible <= 0 && hitRect(b, op.hurtbox())) {
 
               // Auron/Kessa Up Special hit cap (per-use, reset on startAttack)
+              let uspecCapped = false;
               if (a.kind === 'uspec' && (this.char.id === 'auron' || this.char.id === 'kessa')) {
                 op.hitByAuronUSpec = (op.hitByAuronUSpec || 0) + 1;
                 if (op.hitByAuronUSpec > 3) {
                   this.atkHit = true;
-                  // capped for this use — skip damage but continue update (no early return)
-                } else {
-
+                  uspecCapped = true; // capped for this use — skip damage but continue update
+                }
+              }
+              if (!uspecCapped) {
               this.atkHit = true;
 
               if (a.tipper) {
@@ -1555,8 +1557,7 @@
               sparks(g, op.x, op.y - op.h * .55, a.color, this.face, 18 + a.damage);
               g.cam.add(a.damage >= 12 ? 8 : 4);
               audio.play(a.damage >= 14 ? 'heavy' : 'hit');
-              } // end per-use cap else
-              } // end uspec kind check
+              } // end if (!uspecCapped) — normal hits + uncapped uspec ticks
             }
           }
 
