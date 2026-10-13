@@ -176,6 +176,8 @@
         moves.uspec.w = 80;
         moves.uspec.h = 80;
         moves.uspec.d = Math.round(moves.uspec.d * 0.375); // Damage nerf
+        moves.uspec.a = 0.35; // Extended active so rising hits guarantee damage
+        moves.uspec.active = 0.35;
 
         moves.dspec.counter = true;
         moves.dspec.counterCooldown = 1.25;
@@ -218,6 +220,7 @@
         moves.nspec.w = 70; moves.nspec.h = 45;
         moves.sspec.w = 60; moves.sspec.h = 40;
         moves.dspec.w = 120; moves.dspec.h = 50;
+        moves.sspec.d = 15; // Heavy side-special standardized to 15 dmg
 
       } else if (i === 2) { // Lyra
         moves.nspec.stun = true; moves.nspec.cooldown = 1.5; moves.nspec.projectile = true;
@@ -254,6 +257,7 @@
         moves.sspec.d = 9; moves.sspec.kb = 480;
         moves.sspec.cooldown = 0.9;
         moves.sspec.lungeLag = 0.22; // combo-friendly (vs 0.4 default)
+        moves.sspec.pierce = true; // pierce through opponent, no mobility stop
 
         moves.uspec.spin = true;
         moves.uspec.corkscrew = true; // drifts horizontally during rise
@@ -314,6 +318,8 @@
         moves.nspec.w = 74; moves.nspec.h = 46;
         moves.sspec.w = 62; moves.sspec.h = 42;
         moves.dspec.w = 125; moves.dspec.h = 52;
+        moves.sspec.d = 15; // Heavy side-special standardized to 15 dmg
+
       } else if (i === 6) { // Pip - floaty trickster (UNIQUE: skinny needles / wind-pull / free cyclone / bouncy pods)
         moves.nspec.spread = 3; // triple skinny needles
         moves.nspec.spreadAngle = 0.16;
@@ -524,7 +530,12 @@
                 p.hitstun = st;
                 p.vx = 0; p.vy = 0;
                 p.attack = null; p.charging = null; p.countering = false;
+                // Stun needles now deal chip damage (Pip neutral etc.)
+                p.damage += this.damage || 3;
+                p.ledge = null;
                 ring(g, p.x, p.y - p.h / 2, '#ffff00');
+                sparks(g, p.x, p.y - p.h / 2, this.color, this.vx > 0 ? 1 : -1, 8);
+                g.floatingTexts.push({ text: 'hit', color: '#ff3333', x: p.x, y: p.y - p.h - 20, life: 0.8, vy: -60 });
                 audio.play('hit');
               } else if (this.boomerang && this.returning) {
                 p.takeHit(this.owner, this.damage, this.kb, Math.atan2(this.vy, this.vx), g, true);
@@ -688,6 +699,7 @@
         this.shieldBroken = false;
         this.shieldRegenCD = 0;
         this.isShielding = false;
+        this.shieldBreaks = 0; // breaks this stock (first break recovers at 1/2)
 
         this.inGravityZone = false;
         this.lunging = false;
@@ -951,6 +963,12 @@
         if (kind === 'uspec' && (this.char.id === 'sable' || this.char.id === 'hex') && !this.ground && this.hasUsedUpSpecial) return;
         if (kind === 'uspec' && this.helpless && !this.ground) return;
 
+        // Auron/Kessa Up-Spec: reset per-use multi-hit counter so damage is guaranteed each use
+        if (kind === 'uspec' && (this.char.id === 'auron' || this.char.id === 'kessa')) {
+          if (g && g.players) for (const pl of g.players) pl.hitByAuronUSpec = 0;
+          this.uspecHits = 0;
+        }
+
         if (a.charge && (c.heldN || c.heldSpecial)) {
           this.charging = a;
           this.chargingKind = kind;
@@ -1185,9 +1203,10 @@
           this.respawn -= dt;
           if (this.respawn <= 0 && this.stocks > 0) {
             this.dead = false; this.x = this.spawnX; this.y = this.spawnY; this.vx = this.vy = 0; this.damage = 0; this.invincible = 1.8; this.ledge = null; this.airDodge = false; this.helpless = false; this.stunned = false; this.countering = false; this.charging = null;
-            this.shieldHP = 100; this.shieldBroken = false; this.isShielding = false;
+            this.shieldHP = 100; this.maxShieldHP = 100; this.shieldBroken = false; this.isShielding = false; this.shieldBreaks = 0;
             this.jumps = this.maxJumps;
             this.hasUsedUpSpecial = false;
+            this.hitByAuronUSpec = 0; this.uspecHits = 0;
             ring(g, this.x, this.y - 50, this.char.accent);
           }
           return;
@@ -1241,6 +1260,7 @@
           if (this.shieldHP <= 0) {
             this.shieldHP = 0;
             this.shieldBroken = true;
+            this.shieldBreaks = (this.shieldBreaks || 0) + 1;
             this.isShielding = false;
             this.stunned = true;
             this.stunT = 7.0;
@@ -1277,6 +1297,14 @@
           if (this.stunT <= 0) {
             this.stunned = false;
             this.hitstun = 0;
+            // First shield break per stock recovers at 1/2 durability
+            if (this.shieldBroken && (this.shieldBreaks || 0) === 1) {
+              this.shieldBroken = false;
+              this.maxShieldHP = 50;
+              this.shieldHP = 50;
+              this.shieldRegenCD = 1.0;
+              ring(g, this.x, this.y - this.h / 2, '#c9f8ff');
+            }
           } else {
             this.hitstun = this.stunT;
             this.vx = 0;
@@ -1307,7 +1335,7 @@
               this.hitstun = 0.6;
               g.tempHitboxes.push({
                 x: this.x - 60, y: this.y - 20, w: 120, h: 60,
-                damage: 16, kb: 750, angle: this.grabber.face > 0 ? -0.12 : Math.PI + 0.12,
+                damage: 15, kb: 750, angle: -0.12,
                 owner: this.grabber, life: 0.2, color: '#9dff57'
               });
               sparks(g, this.x, this.y + 20, '#9dff57', this.grabber.face, 30);
@@ -1317,7 +1345,7 @@
               this.hitstun = 0.5;
               g.tempHitboxes.push({
                 x: this.x - 60, y: this.y + 20, w: 120, h: 40,
-                damage: 18, kb: 800, angle: -Math.PI / 2,
+                damage: 15, kb: 800, angle: -Math.PI / 2,
                 owner: this.grabber, life: 0.2, color: '#ff8848'
               });
               sparks(g, this.x, this.y + 20, '#ff8848', this.grabber.face, 30);
@@ -1436,11 +1464,16 @@
               sparks(g, op.x, op.y - op.h * .55, la.color, this.face, 18 + la.damage);
               g.cam.add(la.damage >= 12 ? 8 : 4);
               audio.play(la.damage >= 14 ? 'heavy' : 'hit');
-              // lunge stops on hit for combo followups
-              this.lunging = false;
-              this.vx = 0;
-              this.lag = 0.08;
-              this.attack = null;
+              if (la.pierce) {
+                // Kessa pierce: keep full momentum through opponent, no stop
+                this.lag = 0.08;
+              } else {
+                // lunge stops on hit for combo followups
+                this.lunging = false;
+                this.vx = 0;
+                this.lag = 0.08;
+                this.attack = null;
+              }
             }
           }
           if (this.lunging && this.lungeTraveled >= this.lungeDist) {
@@ -1467,14 +1500,13 @@
             const b = this.box();
             if (op && !op.dead && op.invincible <= 0 && hitRect(b, op.hurtbox())) {
 
-              // Auron/Kessa Up Special hit cap
+              // Auron/Kessa Up Special hit cap (per-use, reset on startAttack)
               if (a.kind === 'uspec' && (this.char.id === 'auron' || this.char.id === 'kessa')) {
                 op.hitByAuronUSpec = (op.hitByAuronUSpec || 0) + 1;
                 if (op.hitByAuronUSpec > 3) {
                   this.atkHit = true;
-                  return; // Cap at 3 ticks
-                }
-              }
+                  // capped for this use — skip damage but continue update (no early return)
+                } else {
 
               this.atkHit = true;
 
@@ -1496,6 +1528,7 @@
                 this.vx = 0;
                 audio.play('heavy');
               } else if (a.stunTime) {
+                op.damage += a.damage || 0;
                 op.stunned = true;
                 op.stunT = a.stunTime;
                 op.hitstun = a.stunTime;
@@ -1504,6 +1537,7 @@
                 op.attack = null;
                 op.charging = null;
                 op.countering = false;
+                op.ledge = null;
                 this.attack = null;
                 this.atkT = 0;
               } else if (a.cannon) {
@@ -1521,6 +1555,8 @@
               sparks(g, op.x, op.y - op.h * .55, a.color, this.face, 18 + a.damage);
               g.cam.add(a.damage >= 12 ? 8 : 4);
               audio.play(a.damage >= 14 ? 'heavy' : 'hit');
+              } // end per-use cap else
+              } // end uspec kind check
             }
           }
 
@@ -1621,6 +1657,7 @@
           if (this.shieldHP <= 0) {
             this.shieldHP = 0;
             this.shieldBroken = true;
+            this.shieldBreaks = (this.shieldBreaks || 0) + 1;
             this.isShielding = false;
             this.stunned = true;
             this.stunT = 7.0;
